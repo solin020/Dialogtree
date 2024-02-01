@@ -2,6 +2,19 @@
 from xml.etree import ElementTree as ET
 from openai import OpenAI
 import textwrap
+from loguru import logger
+import argparse
+import sys
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    '-d', '--debug',
+    help="Print lots of debugging statements",
+    action="store_const", dest="loglevel", const='DEBUG',
+    default='WARNING',
+)
+args = parser.parse_args() 
+logger.remove(0)
+logger.add(sys.stderr, level=args.loglevel)   
 
 
 class Branch:
@@ -19,22 +32,24 @@ class Branch:
         backprompt = self.parent.substitute(self.prompt)
         print(backprompt)
         response = input()
-        choice = self.parent.complete(
-            self.parent.substitute(
+        answerparse_prompt = self.parent.substitute(
+            self.answerparse, response=response, backprompt=backprompt
+        )
+        logger.debug(f"{answerparse_prompt=}")
+        choice = self.parent.complete(answerparse_prompt)
+        logger.debug(f"attempted parse: {choice}")
+        while (pair:=findmatch(choice, self.jump_table)) is None:
+            error_prompt = self.parent.substitute(self.errorprompt, response=response, backprompt=backprompt)
+            logger.debug(f"{error_prompt=}")
+            print(self.parent.complete(error_prompt))
+            response = input()
+            answerparse_prompt = self.parent.substitute(
                 self.answerparse, response=response, backprompt=backprompt
             )
-        )
-        print("choice", choice)
-        while (pair:=findmatch(choice, self.jump_table)) is None:
-            print(self.parent.complete(
-                self.parent.substitute(self.errorprompt, response=response, backprompt=backprompt)
-                ))
-            response = input()
-            choice = self.parent.complete(
-                self.parent.substitute(
-                    self.answerparse, response=response, backprompt=backprompt
-                )
-            )
+            logger.debug(f"{answerparse_prompt=}")
+            choice = self.parent.complete(answerparse_prompt)
+            logger.debug(f"attempted parse: {choice}")
+        logger.debug(f"parsed answer: {pair[0]}")
         self.parent.jump(pair[0], pair[1])
 
 
@@ -54,6 +69,40 @@ class State:
         else:
             self.parent.jump_destinations['end'].execute()
 
+class LLMQuestionDirect:
+    def __init__(self, node, parent):
+        self.node = node
+        self.parent = parent
+    
+    def execute(self):
+        llm_input = self.parent.substitute(self.node, self.parent.context)
+        logger.debug(f"{llm_input=}")
+        print(self.parent.complete(llm_input))
+        if 'nextdestination' in self.node.attrib:
+            self.parent.jump_destinations[self.node.attrib['nextdestination']].execute()
+        else:
+            self.parent.jump_destinations['end'].execute()
+
+class LLMQuestionIndirect:
+    def __init__(self, node, parent):
+        self.node = node
+        self.parent = parent
+        self.userquestion, self.answerparse = node
+    
+    def execute(self):
+        backprompt = self.parent.substitute(self.userquestion)
+        print(backprompt)
+        response = input()
+        answerparse_prompt = self.parent.substitute(
+            self.answerparse, response=response, backprompt=backprompt
+        )
+        logger.debug(f"{answerparse_prompt=}")
+        print(self.parent.complete(answerparse_prompt))
+        if 'nextdestination' in self.node.attrib:
+            self.parent.jump_destinations[self.node.attrib['nextdestination']].execute()
+        else:
+            self.parent.jump_destinations['end'].execute()
+
 class Goodbye:
     def __init__(self, node, parent):
         self.node = node
@@ -63,51 +112,6 @@ class Goodbye:
         print(self.parent.substitute(self.node, self.parent.context))
 
 
-class FullQuestion:
-    def __init__(self, node, parent):
-        self.node = node
-        self.parent = parent
-        children = list(node)
-        if children[0].tag == "preamble":
-            self.preamble, self.systemquestion, self.continuequestion, self.answerparse, *self.jumps = list(node)
-        else:
-            self.preamble = None
-            self.systemquestion, self.continuequestion, self.answerparse, *self.jumps = list(node)
-        self.jump_table = {}
-        for j in self.jumps:
-            for a in j.attrib['answer'].split(' '):
-                self.jump_table[a] = j
-    
-    def execute(self):
-        print('gothere')
-        backprompt = None
-        response = None
-        if self.preamble is not None:
-            backprompt = self.parent.substitute(self.preamble)
-            print(backprompt)
-            response = input()
-        print(self.parent.complete(
-            self.parent.substitute(self.systemquestion, backprompt=backprompt, response=response))
-        )
-        backprompt = self.parent.substitute(self.continuequestion, backprompt=backprompt, response=response)
-        print(backprompt)
-        response = input()
-        choice = self.parent.complete(
-                self.parent.substitute(
-                    self.answerparse, response=response, backprompt=backprompt
-                )
-            )
-        while (pair:=findmatch(choice, self.jump_table)) is None:
-            print(
-                self.parent.substitute(self.continuequestion, response)
-                )
-            response = input()
-            choice = self.parent.complete(
-                self.parent.substitute(
-                    self.answerparse, response=response, backprompt=backprompt
-                )
-            )
-        self.parent.jump(pair[0], pair[1])
         
 def findmatch(choice, jump_table):
     for key, jump in jump_table.items():
@@ -119,10 +123,17 @@ def findmatch(choice, jump_table):
 
 
 class Dialog:
-    def __init__(self, treefile, functions, openai_key, org_id, model="gpt-3.5-turbo"):
+    from typing import Callable
+    def __init__(self, treefile:str, functions:dict[str, Callable], openai_key:str, org_id:str, model:str="gpt-3.5-turbo"):
         self.parse(ET.parse(treefile).getroot())
+        self.functions=functions
         self.client = OpenAI(api_key=openai_key, organization=org_id)
         self.model = model
+    
+    def __init_subclass__(self, treefile:str, functions:dict[str, Callable], *args, **kwargs):
+        self.parse(ET.parse(treefile).getroot())
+        self.functions=functions
+
     
     def parse(self, root):
         self.root = root
@@ -159,7 +170,8 @@ class Dialog:
         match target_node.tag:
             case 'state': return State(target_node, self)
             case 'branch': return Branch(target_node, self)
-            case 'fullquestion': return FullQuestion(target_node, self)
+            case 'llmquestion-indirect': return LLMQuestionIndirect(target_node, self)
+            case 'llmquestion-direct': return LLMQuestionDirect(target_node, self)
             case 'goodbye': return Goodbye(target_node, self)
 
     def substitute(self, node, response=None, backprompt=None):
