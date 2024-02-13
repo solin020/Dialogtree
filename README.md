@@ -156,12 +156,44 @@ to an unconditional jump to the destination named `indooroutdoor`. If the logic 
 This `<jump>` node will be triggered by either the answers "cat" or "dog"
 and will jump to the destination "catbreed" for cats and "dogbreed" for dogs.
 
+If it is necessary that the jump node instead accept a whole range of answers,
+a function name can instead be passed via the `accept` attribute. This function
+must return either a valu if accepted (possibly modified) or None if not. This function
+must have the signature (answer, context) and be passed in the "functions" dict
+given to the DialogTree object on initialization. An example is shown below
+
+First, the python file:
+
+```
+import re
+def match_zipcode(answer, context):
+    if (zipcode:= re.match(r"\d{5}", answer)[0]):
+        context["zipcode"] = zipcode
+        return zipcode
+    else:
+        return None
+
+dialog = Dialog(treefile="example.xml", functions={'match_zipcode': match_zipcode}, openai_key=openai_key, org_id=org_id, model="gpt-4")
+
+```
+
+Then, the `<jump>` element in the xml:
+
+```
+<jump accept="match_zipcode">
+      <![CDATA[
+      print("Your zipcode is: " + context["zipcode"])
+      ]]>
+</jump>
+```
+
 If the jump function is exceptionally complex, it is advisable to write the function
 in a separate python file and link it to the `<jump>` element via the
-`functionname` attribute. The jump function has to be passed in the "functions" dict
+`functionname` attribute. Like the accept function, the
+ jump function has to be passed in the "functions" dict
 given to the DialogTree object on initialization, with the corresponding key
 in the dictionary matching that stated in the `functionname` attribute. The function's
-signature must be (answer, context). An example is shown below.
+signature is also  (answer, context). An example is shown below.
 
 `example.py`
 ```

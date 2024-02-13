@@ -23,9 +23,13 @@ class Branch:
         self.parent = parent
         self.prompt, self.errorprompt, self.answerparse, *self.jumps = node
         self.jump_table = {}
+        self.anonymous_jumps = []
         for j in self.jumps:
-            for a in j.attrib['answer'].split(' '):
-                self.jump_table[a] = j
+            if j.attrib.get('answer', None):
+                for a in j.attrib['answer'].split(' '):
+                    self.jump_table[a] = j
+            elif j.attrib.get('accept', None):
+                self.anonymous_jumps.append(j)
 
     
     def execute(self):
@@ -38,7 +42,7 @@ class Branch:
         logger.debug(f"{answerparse_prompt=}")
         choice = self.parent.complete(answerparse_prompt)
         logger.debug(f"attempted parse: {choice}")
-        while (pair:=findmatch(choice, self.jump_table)) is None:
+        while (pair:=findmatch(choice, self.jump_table, self.anonymous_jumps, self.parent.functions, self.parent.context)) is None:
             error_prompt = self.parent.substitute(self.errorprompt, response=response, backprompt=backprompt)
             logger.debug(f"{error_prompt=}")
             print(self.parent.complete(error_prompt))
@@ -113,10 +117,13 @@ class Goodbye:
 
 
         
-def findmatch(choice, jump_table):
+def findmatch(choice, jump_table, anonymous_jumps, functions, context):
     for key, jump in jump_table.items():
         if key.lower() in choice.lower():
             return jump, key
+    for jump in anonymous_jumps:
+        if (answer:=functions[jump.attrib['accept']](choice, context)) is not None:
+            return jump, answer
         
         
 
@@ -184,7 +191,7 @@ class Dialog:
             elif item.tag == 'context':
                 start += self.context[item.attrib['key']]
             start += item.tail
-        return '\n'.join(s.strip() for s in start.split('\n'))
+        return '\n'.join(s.strip() for s in start.split('\n') if s.strip)
         
     def start(self):
         self.context = {}

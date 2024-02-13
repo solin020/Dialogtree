@@ -1,5 +1,4 @@
-<!ELEMENT dialogtree ((branch|fullquestion|
-                      llmquestion-direct|llmquestion-indirect|
+<!ELEMENT dialogtree ((branch|llmquestion-direct|llmquestion-indirect|
                       state)+, goodbye)>
 <!ELEMENT branch (userquestion, errorprompt, answerparse, jump*)>
 <!ELEMENT errorprompt (#PCDATA|response|context|backprompt)*>
@@ -17,6 +16,7 @@
 <!ELEMENT jump (#PCDATA)>
 <!ATTLIST jump nextdestination IDREF #IMPLIED
                answer NMTOKENS #IMPLIED
+               accept CDATA #IMPLIED
                function CDATA #IMPLIED>
 <!ELEMENT llmquestion-direct (#PCDATA|response|context|backprompt)*>
 <!ATTLIST llmquestion-direct destinationname ID #IMPLIED
@@ -24,4 +24,5 @@
 <!ELEMENT llmquestion-indirect (userquestion, answerparse)>
 <!ATTLIST llmquestion-indirect destinationname ID #IMPLIED
                 nextdestination IDREF #IMPLIED>
-<!ATTLIST goodbye destinationname ID #FIXED "end">
+
+<!ATTLIST goodbye destinationname ID #IMPLIED>

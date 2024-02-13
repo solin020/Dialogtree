@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE dialogtree SYSTEM "dialogtree.dtd">
+<!DOCTYPE dialogtree SYSTEM "/home/solin020/dialogtree/dialogtree.dtd">
 <dialogtree>
   <branch>
     <userquestion>
@@ -7,7 +7,7 @@
         Are you interested in purchasing a cat or a dog?
     </userquestion>
     <errorprompt>
-        Explain to the user who just replied with this: 
+        Explain to the user who just replied with this:
           <response/> 
 
         to this question:
@@ -145,7 +145,7 @@
     recommend a breed of dog to the user, given that they are <context key="allergy"/> to <context key="animal"/>
     and have <context key="livingspace"/> space for the animal. 
   </llmquestion-direct>
-  <llmquestion-indirect destinationname="recommendbreedindirect" nextdestination="end">
+  <llmquestion-indirect destinationname="recommendbreedindirect" nextdestination="zipcode">
     <userquestion>
       I am ready to recommend a breed of <context key="animal"/> to you now. Ask me for a recommendation.
     </userquestion>
@@ -153,13 +153,41 @@
       Using the information on breeds of <context key="animal"/> provided here:
           <context key="breedinfo"/> 
 
-      answer this user's question, given that they are <context key="allergy"/> to <context key="animal"/>
+      answer this users question, given that they are <context key="allergy"/> to <context key="animal"/>
       and have <context key="livingspace"/> space for the animal. 
     </answerparse>
   </llmquestion-indirect>
   <state destinationname="dogbreed" nextdestination="allergy">
     You have selected dogs.
   </state>
+  <branch destinationname="zipcode">
+    <userquestion>What is your zipcode?</userquestion>
+    <errorprompt>
+      Explain to the user who just replied with this:
+        <response/>
+
+      to this question:
+        <backprompt/>
+
+      that you would like the answer to the preceding question.
+    </errorprompt>
+    <answerparse>
+      You asked the user this:
+
+      <backprompt/>
+
+      And the user replied with this:
+
+      <response/>
+
+      Tell me what the user said their zipcode was. If you can't tell reply "other". Say only one word.
+    </answerparse>
+    <jump accept="match_zipcode" nextdestination="end">
+      <![CDATA[
+      print("Your zipcode is: " + context["zipcode"])
+      ]]>
+    </jump>
+  </branch>
   <goodbye destinationname="end">
     Thanks for talking to me. Goodbye.
   </goodbye>
